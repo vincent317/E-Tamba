@@ -28,13 +28,12 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from einops import rearrange, repeat, einsum
 from transformers import GPTNeoXLayer, GPTNeoXConfig
-
 from mamba_ssm.models.mixer_seq_simple import create_block
 
 @dataclass
 class ModelArgs:
     d_model: int
-    transformer_layers: int
+    first_transformer_layers: int
     mamba_layers: int
     vocab_size: int
     transformer_config: GPTNeoXConfig
@@ -47,8 +46,8 @@ class MambaTransformer(nn.Module):
         self.args = args
         self.max_len = 1024
         self.embed_in = nn.Embedding(args.vocab_size, args.d_model)
-        self.emb_dropout = nn.Dropout(0)
-        self.transformer_layers = nn.ModuleList([GPTNeoXLayer(args.transformer_config) for _ in range(args.transformer_layers)])
+        self.emb_dropout = nn.Dropout(args.transformer_config.hidden_dropout)
+        self.first_transformer_layers = nn.ModuleList([GPTNeoXLayer(args.transformer_config) for _ in range(args.first_transformer_layers)])
         self.mamba_layers = nn.ModuleList(
             [
                 create_block(
@@ -67,60 +66,13 @@ class MambaTransformer(nn.Module):
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
         self.embed_out.weight = self.embed_in.weight  # Tie output projection to embedding weights.
                                                      # See "Weight Tying" paper
-
-    def prepare_inputs_for_generation(
-        self, input_ids, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
-    ):
-        input_shape = input_ids.shape
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            past_length = past_key_values[0][0].shape[2]
-
-            # Some generation methods already pass only the last input ID
-            if input_ids.shape[1] > past_length:
-                remove_prefix_length = past_length
-            else:
-                # Default to old behavior: keep only final ID
-                remove_prefix_length = input_ids.shape[1] - 1
-
-            input_ids = input_ids[:, remove_prefix_length:]
-
-        position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
-
-        # if model is used as a decoder in encoder-decoder model, the decoder attention mask is created on the fly
-        if attention_mask is None:
-            attention_mask = input_ids.new_ones(input_shape)
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-        model_inputs.update(
-            {
-                "attention_mask": attention_mask,
-                "past_key_values": past_key_values,
-                "position_ids": position_ids,
-            }
-        )
-
-        return model_inputs
     
-    def forward(self, input_ids):
+    def forward(self, input_ids, attention_mask):
         input_shape = input_ids.size()
         batch_size, seq_length = input_shape
-        model_inputs = self.prepare_inputs_for_generation(input_ids=input_ids)
-        attention_mask = model_inputs['attention_mask']
         assert batch_size > 0, "batch_size has to be defined and > 0"
         attention_mask = attention_mask.view(batch_size, -1)
-        
-        # TODO: Is this mask correct???
+
         if self._use_flash_attention_2:
             attention_mask = attention_mask if 0 in attention_mask else None
         else:
@@ -140,7 +92,6 @@ class MambaTransformer(nn.Module):
             attention_mask = (1.0 - attention_mask) * torch.finfo(torch.float16).min
 
         past_length = 0
-        past_key_values = tuple([None] * self.args.transformer_layers)
         
         device = input_ids.device
         position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=device)
@@ -148,16 +99,18 @@ class MambaTransformer(nn.Module):
 
         x = self.embed_in(input_ids)
         x = self.emb_dropout(x)
-        
-        for i, (layer, layer_past) in enumerate(zip(self.transformer_layers, past_key_values)):
+        head_mask = [None] * (self.args.first_transformer_layers+1)
+
+        for i, layer in enumerate(self.first_transformer_layers):
             outputs = layer(
                 x,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
-                layer_past=layer_past,
+                head_mask=head_mask[i],
                 use_cache=True,
             )
             x = outputs[0]
+            print(x)
             
         residual = None
         for layer in self.mamba_layers:
@@ -165,7 +118,14 @@ class MambaTransformer(nn.Module):
                 x, residual
             )
         
-        x = self.final_transformer_layer(x)[0]
+        x = self.final_transformer_layer(
+            x,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            head_mask=head_mask[self.args.first_transformer_layers],
+            use_cache=True,
+        )[0]
+
         x = self.final_layer_norm(x)
         logits = self.embed_out(x)
         return logits
@@ -202,12 +162,12 @@ class MambaTransformer(nn.Module):
         # Originally we have 12 transformer layers, now we keep 8 and replace the next 3 with 4 mamba layers. 
         # But we still keep the last transformer layer.
         mamba_start_layer = 16
-        mamba_end_layer = 19
-        transformer_layers=8
+        mamba_end_layer = 16-1
+        first_transformer_layers=11
         args = ModelArgs(
             d_model=mamba_config_data['d_model'],
             mamba_layers=mamba_end_layer-mamba_start_layer+1,
-            transformer_layers=transformer_layers,
+            first_transformer_layers=first_transformer_layers,
             vocab_size=pythia_config_data.vocab_size,
             transformer_config=pythia_config_data,
             mamba_config=mamba_config_data
@@ -224,7 +184,7 @@ class MambaTransformer(nn.Module):
         transformer_target_layers_set = set()
         mamba_target_layers_set = set()
 
-        for i in range(transformer_layers):
+        for i in range(first_transformer_layers):
             transformer_target_layers_set.add(i)
         transformer_target_layers_set.add(pythia_config_data.num_hidden_layers-1)
         for i in range(mamba_start_layer, mamba_end_layer+1):
@@ -242,11 +202,8 @@ class MambaTransformer(nn.Module):
                     new_state_dict[new_key] = mamba_state_dict[key]
 
         for key in pythia_state_dict:
-            if 'embed' in key or 'final' in key:
+            if 'embed' in key or 'final_layer_norm' in key:
                 new_key = key.replace('gpt_neox.', '')
-                new_state_dict[new_key] = pythia_state_dict[key]
-            elif 'final' in key:
-                new_key = key.replace('gpt_neox.', '').replace('final', 'final_layer_norm')
                 new_state_dict[new_key] = pythia_state_dict[key]
             else:
                 match = re.search(pattern, key)
@@ -256,8 +213,7 @@ class MambaTransformer(nn.Module):
                         if layer_index == pythia_config_data.num_hidden_layers-1:
                             new_key = key.replace('gpt_neox.layers.', '').replace(str(layer_index), 'final_transformer_layer')
                         else:
-                            new_key = key.replace('gpt_neox.layers', 'transformer_layers')
+                            new_key = key.replace('gpt_neox.layers', 'first_transformer_layers')
                         new_state_dict[new_key] = pythia_state_dict[key]
-        breakpoint()
-        model.load_state_dict(new_state_dict)
+        model.load_state_dict(new_state_dict, strict=False)
         return model
