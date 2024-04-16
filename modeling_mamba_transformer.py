@@ -97,6 +97,7 @@ class MambaTransformer(nn.Module):
         position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=device)
         position_ids = position_ids.unsqueeze(0)
         x = self.embed_in(input_ids)
+        breakpoint()
         x = self.emb_dropout(x)
         head_mask = [None] * (self.args.first_transformer_layers+1)
         for i, layer in enumerate(self.first_transformer_layers):
@@ -215,4 +216,16 @@ class MambaTransformer(nn.Module):
                         new_state_dict[new_key] = pythia_state_dict[key]
         model.load_state_dict(new_state_dict, strict=False)
         model.embed_in = nn.Embedding.from_pretrained(pythia_state_dict['gpt_neox.embed_in.weight'].to(model.embed_in.weight.dtype))
+        model.embed_in.requires_grad_ = False
         return model
+    
+    def freeze_layers_except_mamba(self):
+        """Freezes all parameters except for those in the Mamba layers."""
+        # Freeze all parameters in the model
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # Unfreeze parameters in the Mamba layers
+        for layer in self.mamba_layers:
+            for param in layer.parameters():
+                param.requires_grad = True

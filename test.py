@@ -34,6 +34,8 @@ tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "left" 
 
 model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
+model.freeze_layers_except_mamba()
+breakpoint()
 #model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name, output_hidden_states=True).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
