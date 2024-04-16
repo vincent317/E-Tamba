@@ -88,19 +88,17 @@ class MambaTransformer(nn.Module):
             # positions we want to attend and the dtype's smallest value for masked positions.
             # Since we are adding it to the raw scores before the softmax, this is
             # effectively the same as removing these entirely.
-            attention_mask = attention_mask.to(torch.float16)  # fp16 compatibility
-            attention_mask = (1.0 - attention_mask) * torch.finfo(torch.float16).min
+            attention_mask = attention_mask.to(torch.float32)  # fp16 compatibility
+            attention_mask = (1.0 - attention_mask) * torch.finfo(torch.float32).min
 
         past_length = 0
         
         device = input_ids.device
         position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=device)
         position_ids = position_ids.unsqueeze(0)
-
         x = self.embed_in(input_ids)
         x = self.emb_dropout(x)
         head_mask = [None] * (self.args.first_transformer_layers+1)
-
         for i, layer in enumerate(self.first_transformer_layers):
             outputs = layer(
                 x,
@@ -110,7 +108,7 @@ class MambaTransformer(nn.Module):
                 use_cache=True,
             )
             x = outputs[0]
-            print(x)
+            
             
         residual = None
         for layer in self.mamba_layers:
@@ -161,9 +159,9 @@ class MambaTransformer(nn.Module):
 
         # Originally we have 12 transformer layers, now we keep 8 and replace the next 3 with 4 mamba layers. 
         # But we still keep the last transformer layer.
-        mamba_start_layer = 16
-        mamba_end_layer = 16-1
-        first_transformer_layers=11
+        mamba_start_layer = 20
+        mamba_end_layer = 23
+        first_transformer_layers=7
         args = ModelArgs(
             d_model=mamba_config_data['d_model'],
             mamba_layers=mamba_end_layer-mamba_start_layer+1,
@@ -216,4 +214,5 @@ class MambaTransformer(nn.Module):
                             new_key = key.replace('gpt_neox.layers', 'first_transformer_layers')
                         new_state_dict[new_key] = pythia_state_dict[key]
         model.load_state_dict(new_state_dict, strict=False)
+        model.embed_in = nn.Embedding.from_pretrained(pythia_state_dict['gpt_neox.embed_in.weight'].to(model.embed_in.weight.dtype))
         return model

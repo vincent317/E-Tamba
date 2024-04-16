@@ -34,7 +34,7 @@ tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "left" 
 
 model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
-# model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
+#model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name, output_hidden_states=True).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
 max_seq_len = 512
@@ -54,8 +54,8 @@ for i in tqdm(range(0, num_rows, batch_size)):
     targets = input_ids[i:i+batch_size, 1:num_tokens_per_row].to(device)
 
     #outputs = model(input_ids=inputs, attention_mask=mask).logits # use this for AutoModelForCasualLM models
-    outputs = model(input_ids=inputs, attention_mask=mask) # use this for homemade MambaTransformer models
     
+    outputs = model(input_ids=inputs, attention_mask=mask) # use this for homemade MambaTransformer models
     loss = torch.exp(criterion(outputs.transpose(1, 2), targets)).item()
     losses.append(loss) # perplexity
 
