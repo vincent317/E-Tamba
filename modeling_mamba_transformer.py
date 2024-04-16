@@ -97,7 +97,6 @@ class MambaTransformer(nn.Module):
         position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=device)
         position_ids = position_ids.unsqueeze(0)
         x = self.embed_in(input_ids)
-        breakpoint()
         x = self.emb_dropout(x)
         head_mask = [None] * (self.args.first_transformer_layers+1)
         for i, layer in enumerate(self.first_transformer_layers):

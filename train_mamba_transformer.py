@@ -8,6 +8,8 @@ from tqdm import tqdm
 import json
 import gzip
 from datasets import load_dataset, Dataset, DatasetDict
+from mamba_transformer_trainer import MambaTransformerTrainer
+
 
 pretrained_mamba_name = 'state-spaces/mamba-130m'
 pretrained_pythia_name = 'EleutherAI/pythia-160m'
@@ -27,19 +29,20 @@ def prepare_dataset():
 
 def tokenize(raw_dataset):
     outputs = tokenizer(
-        raw_dataset['text'],
+        raw_dataset['text'][:10],
         truncation=True,
         max_length=seq_len,
         return_overflowing_tokens=True,
         return_length=True,
     )
     input_batch = []
-    for length, input_ids in zip(outputs["length"], outputs["input_ids"]):
+    attention_mask = []
+    for length, input_ids, attn_mask in zip(outputs["length"], outputs["input_ids"], outputs["attention_mask"]):
         if length == seq_len:
             input_batch.append(input_ids)
-    return {"input_ids": input_batch}
+            attention_mask.append(attn_mask)
+    return {"input_ids": input_batch, "attention_mask": attention_mask}
 
-breakpoint()
 raw_dataset = prepare_dataset()
 tokenized_datasets = raw_dataset.map(
     tokenize, batched=True, remove_columns=raw_dataset['train'].column_names
@@ -52,23 +55,22 @@ data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
     output_dir="mamba_transformer",
-    per_device_train_batch_size=32,
-    per_device_eval_batch_size=32,
+    per_device_train_batch_size=16,
+    per_device_eval_batch_size=16,
     evaluation_strategy="steps",
-    eval_steps=5_000,
-    logging_steps=5_000,
+    eval_steps=5_00,
+    logging_steps=5_0,
     gradient_accumulation_steps=8,
     num_train_epochs=1,
     weight_decay=0.1,
     warmup_steps=1_000,
     lr_scheduler_type="cosine",
-    learning_rate=5e-4,
-    save_steps=5_000,
+    learning_rate=5e-5,
+    save_steps=5_00,
     fp16=True,
-    push_to_hub=True,
 )
 
-trainer = Trainer(
+trainer = MambaTransformerTrainer(
     model=model,
     tokenizer=tokenizer,
     args=args,
@@ -76,3 +78,5 @@ trainer = Trainer(
     train_dataset=tokenized_datasets["train"],
     eval_dataset=tokenized_datasets["valid"],
 )
+
+trainer.train()
