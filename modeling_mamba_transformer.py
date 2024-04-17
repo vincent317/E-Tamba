@@ -27,7 +27,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 from einops import rearrange, repeat, einsum
-from transformers import GPTNeoXLayer, GPTNeoXConfig
+from transformers import GPTNeoXLayer, GPTNeoXConfig, PreTrainedModel, PretrainedConfig
 from mamba_ssm.models.mixer_seq_simple import create_block
 
 @dataclass
@@ -228,3 +228,29 @@ class MambaTransformer(nn.Module):
         for layer in self.mamba_layers:
             for param in layer.parameters():
                 param.requires_grad = True
+
+
+class MambaTransformerForLM(PreTrainedModel):
+    def __init__(self, config=None):
+        super().__init__(config)
+        pretrained_mamba_name = 'state-spaces/mamba-130m'
+        pretrained_pythia_name = 'EleutherAI/pythia-160m'
+        self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
+        self.model.freeze_layers_except_mamba()
+
+    def forward(self, input_ids, attention_mask, labels):
+        logits = self.model(input_ids, attention_mask)
+        if labels is not None:
+            loss_fct = torch.nn.CrossEntropyLoss()
+            shift_logits = logits[:, :-1, :].contiguous()
+            labels = labels[:, 1:].contiguous()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+            return {"loss": loss, "logits": logits}
+        return {"logits": logits}
+    
+class MambaTransformerConfig(PretrainedConfig):
+    def __init__(
+        self,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
