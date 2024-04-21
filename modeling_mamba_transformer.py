@@ -27,8 +27,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 from einops import rearrange, repeat, einsum
-from transformers import GPTNeoXLayer, GPTNeoXConfig, PreTrainedModel, PretrainedConfig
+from transformers import GPTNeoXLayer, GPTNeoXConfig, PreTrainedModel, PretrainedConfig, AutoModelForCausalLM
 from mamba_ssm.models.mixer_seq_simple import create_block
+from safetensors.torch import load_file
+from transformers.debug_utils import detect_overflow
 
 @dataclass
 class ModelArgs:
@@ -48,6 +50,10 @@ class MambaTransformer(nn.Module):
         self.embed_in = nn.Embedding(args.vocab_size, args.d_model)
         self.emb_dropout = nn.Dropout(args.transformer_config.hidden_dropout)
         self.first_transformer_layers = nn.ModuleList([GPTNeoXLayer(args.transformer_config) for _ in range(args.first_transformer_layers)])
+        # self.projection_layer = nn.Linear(args.d_model, args.d_model)
+        # torch.nn.init.eye_(self.projection_layer.weight)
+        # torch.nn.init.zeros_(self.projection_layer.bias)
+        # self.activation = nn.ReLU()
         self.mamba_layers = nn.ModuleList(
             [
                 create_block(
@@ -67,7 +73,7 @@ class MambaTransformer(nn.Module):
         self.embed_out.weight = self.embed_in.weight  # Tie output projection to embedding weights.
                                                      # See "Weight Tying" paper
     
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, attn_dtype):
         input_shape = input_ids.size()
         batch_size, seq_length = input_shape
         assert batch_size > 0, "batch_size has to be defined and > 0"
@@ -88,11 +94,9 @@ class MambaTransformer(nn.Module):
             # positions we want to attend and the dtype's smallest value for masked positions.
             # Since we are adding it to the raw scores before the softmax, this is
             # effectively the same as removing these entirely.
-            attention_mask = attention_mask.to(torch.float32)  # fp16 compatibility
-            attention_mask = (1.0 - attention_mask) * torch.finfo(torch.float32).min
-
+            attention_mask = attention_mask.to(attn_dtype)  # fp16 compatibility
+            attention_mask = (1.0 - attention_mask) * torch.finfo(attn_dtype).min
         past_length = 0
-        
         device = input_ids.device
         position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=device)
         position_ids = position_ids.unsqueeze(0)
@@ -109,24 +113,46 @@ class MambaTransformer(nn.Module):
             )
             x = outputs[0]
             
-            
-        residual = None
-        for layer in self.mamba_layers:
-            x, residual = layer(
-                x, residual
-            )
-        
-        x = self.final_transformer_layer(
-            x,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            head_mask=head_mask[self.args.first_transformer_layers],
-            use_cache=True,
-        )[0]
+        # x = self.projection_layer(x)
+        # x = self.activation(x)
+        if torch.is_autocast_enabled():
+            with torch.cuda.amp.autocast(enabled=False):
+                residual = None
+                for layer in self.mamba_layers:
+                    x, residual = layer(
+                        x, residual
+                    )
+                x = self.final_transformer_layer(
+                    x,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    head_mask=head_mask[self.args.first_transformer_layers],
+                    use_cache=True,
+                )[0]
 
-        x = self.final_layer_norm(x)
-        logits = self.embed_out(x)
-        return logits
+                x = self.final_layer_norm(x)
+                logits = self.embed_out(x)
+                return logits
+        else:
+            residual = None
+            for layer in self.mamba_layers:
+                x, residual = layer(
+                    x, residual
+                )
+            x = self.final_transformer_layer(
+                x,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                head_mask=head_mask[self.args.first_transformer_layers],
+                use_cache=True,
+            )[0]
+
+            x = self.final_layer_norm(x)
+            logits = self.embed_out(x)
+            return logits
+        #detect_overflow(x, "After Mamba layers")
+
+        
 
     
     @staticmethod
@@ -224,29 +250,79 @@ class MambaTransformer(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
 
-        # Unfreeze parameters in the Mamba layers
+        # Unfreeze parameters in the Mamba layers and projection layers
         for layer in self.mamba_layers:
             for param in layer.parameters():
                 param.requires_grad = True
+        # self.projection_layer.requires_grad_ = True
 
 
 class MambaTransformerForLM(PreTrainedModel):
-    def __init__(self, config=None):
+    # def __init__(self, config=None, check_point_path=None):
+    #     super().__init__(config)
+    #     pretrained_mamba_name = 'state-spaces/mamba-130m'
+    #     pretrained_pythia_name = 'EleutherAI/pythia-160m'
+    #     self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
+    #     if check_point_path is not None:
+    #         loaded = load_file(check_point_path)
+    #         keys_to_change = list(loaded.keys())  # Create a list of keys to iterate over
+    #         for key in keys_to_change:
+    #             new_key = key.replace('model.', '')
+    #             loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
+    #         self.model.load_state_dict(loaded)
+    #     self.model.freeze_layers_except_mamba()
+
+    # def forward(self, input_ids, attention_mask, labels, teacher_probabilities=None):
+    #     logits = self.model(input_ids, attention_mask)
+    #     if labels is not None and teacher_probabilities is None:
+    #         loss_fct = torch.nn.CrossEntropyLoss()
+    #         shift_logits = logits[:, :-1, :].contiguous()
+    #         labels = labels[:, 1:].contiguous()
+    #         loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+    #         #loss = loss_fct(shift_logits.transpose(1, 2), labels)
+    #         return {"loss": loss, "logits": logits}
+    #     return {"logits": logits}
+
+    def __init__(self, config=None, check_point_path=None, distilling=None, T=4, distill_loss_weight=0.75):
         super().__init__(config)
         pretrained_mamba_name = 'state-spaces/mamba-130m'
         pretrained_pythia_name = 'EleutherAI/pythia-160m'
         self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
+        if check_point_path is not None:
+            loaded = load_file(check_point_path)
+            keys_to_change = list(loaded.keys())  # Create a list of keys to iterate over
+            for key in keys_to_change:
+                new_key = key.replace('model.', '')
+                loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
+            self.model.load_state_dict(loaded)
         self.model.freeze_layers_except_mamba()
+        self.teacher = None
+        if distilling is not None:
+            device = 'cuda'
+            self.teacher = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
+            self.T = T
+            self.distill_loss_weight = distill_loss_weight
 
     def forward(self, input_ids, attention_mask, labels):
-        logits = self.model(input_ids, attention_mask)
-        if labels is not None:
-            loss_fct = torch.nn.CrossEntropyLoss()
+        logits = self.model(input_ids, attention_mask, self.dtype)
+        
+        if labels is None:
+            return {"logits": logits}
+        else:
+            cross_entropy_fcn = nn.CrossEntropyLoss()
             shift_logits = logits[:, :-1, :].contiguous()
             labels = labels[:, 1:].contiguous()
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-            return {"loss": loss, "logits": logits}
-        return {"logits": logits}
+            cross_entropy_loss = cross_entropy_fcn(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+            
+            if self.teacher is not None:
+                teacher_logits = self.teacher(input_ids, attention_mask=attention_mask).logits
+                s_log_probs = F.log_softmax(logits/self.T, dim=-1)
+                t_probs = F.softmax(teacher_logits/self.T, dim=-1)
+                distill_loss = -(s_log_probs*t_probs).sum(dim=-1).mean()
+                total_loss = self.distill_loss_weight*distill_loss + (1-self.distill_loss_weight)*cross_entropy_loss
+                return {"loss": total_loss, "logits": logits}        
+            else:
+                return {"loss": cross_entropy_loss, "logits": logits}        
     
 class MambaTransformerConfig(PretrainedConfig):
     def __init__(
