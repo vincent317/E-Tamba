@@ -225,7 +225,8 @@ class MambaTransformer(nn.Module):
         for layer in self.mamba_layers:
             for param in layer.parameters():
                 param.requires_grad = True
-        # self.projection_layer.requires_grad_ = True
+        for param in self.final_transformer_layer.parameters():
+                param.requires_grad = True
 
 
 class MambaTransformerForLM(PreTrainedModel):

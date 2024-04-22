@@ -37,12 +37,8 @@ def tokenize(raw_dataset):
     input_batch = []
     attention_mask = []
     
-    i = 0
     for length, input_ids, attn_mask in zip(outputs["length"], outputs["input_ids"], outputs["attention_mask"]):
-        if i == 700:
-            break
         if length == seq_len:
-            i += 1
             input_batch.append(input_ids)
             attention_mask.append(attn_mask)
     return {"input_ids": input_batch, "attention_mask": attention_mask}
@@ -56,14 +52,14 @@ model = MambaTransformerForLM(MambaTransformerConfig())
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="pythia_mamba_20_23_2e-4_update",
+    output_dir="mamba_final_transformer_unfreezed",
     per_device_train_batch_size=48,
     per_device_eval_batch_size=64,
     evaluation_strategy="steps",
-    eval_steps=5000,
+    eval_steps=20000,
     logging_steps=50,
     gradient_accumulation_steps=1,
-    num_train_epochs=2,
+    num_train_epochs=1,
     learning_rate=2e-4,
     save_steps=5000,
     fp16=True
