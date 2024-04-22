@@ -29,7 +29,7 @@ class MambaTransformer(nn.Module):
         self.embed_in = nn.Embedding(args.vocab_size, args.d_model)
         self.emb_dropout = nn.Dropout(args.transformer_config.hidden_dropout)
         self.first_transformer_layers = nn.ModuleList([GPTNeoXLayer(args.transformer_config) for _ in range(args.first_transformer_layers)])
-        
+
         self.mamba_layers = nn.ModuleList(
             [
                 create_block(
