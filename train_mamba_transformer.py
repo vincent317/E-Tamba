@@ -52,7 +52,7 @@ model = MambaTransformerForLM(MambaTransformerConfig())
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="mamba_transformer_20_23_2e-4",
+    output_dir="pythia_mamba_20_23_2e-4_update",
     per_device_train_batch_size=48,
     per_device_eval_batch_size=64,
     evaluation_strategy="steps",

@@ -1,24 +1,3 @@
-"""Simple, minimal implementation of Mamba in one file of PyTorch.
-
-Suggest reading the following before/while reading the code:
-    [1] Mamba: Linear-Time Sequence Modeling with Selective State Spaces (Albert Gu and Tri Dao)
-        https://arxiv.org/abs/2312.00752
-    [2] The Annotated S4 (Sasha Rush and Sidd Karamcheti)
-        https://srush.github.io/annotated-s4
-
-Glossary:
-    b: batch size                       (`B` in Mamba paper [1] Algorithm 2)
-    l: sequence length                  (`L` in [1] Algorithm 2)
-    d or d_model: hidden dim
-    n or d_state: latent state dim      (`N` in [1] Algorithm 2)
-    expand: expansion factor            (`E` in [1] Section 3.4)
-    d_in or d_inner: d * expand         (`D` in [1] Algorithm 2)
-    A, B, C, D: state space parameters  (See any state space representation formula)
-                                        (B, C are input-dependent (aka selective, a key innovation in Mamba); A, D are not)
-    Δ or delta: input-dependent step size
-    dt_rank: rank of Δ                  (See [1] Section 3.6 "Parameterization of ∆")
-
-"""
 from __future__ import annotations
 import json
 import re
@@ -50,17 +29,14 @@ class MambaTransformer(nn.Module):
         self.embed_in = nn.Embedding(args.vocab_size, args.d_model)
         self.emb_dropout = nn.Dropout(args.transformer_config.hidden_dropout)
         self.first_transformer_layers = nn.ModuleList([GPTNeoXLayer(args.transformer_config) for _ in range(args.first_transformer_layers)])
-        # self.projection_layer = nn.Linear(args.d_model, args.d_model)
-        # torch.nn.init.eye_(self.projection_layer.weight)
-        # torch.nn.init.zeros_(self.projection_layer.bias)
-        # self.activation = nn.ReLU()
+        
         self.mamba_layers = nn.ModuleList(
             [
                 create_block(
                     d_model=args.d_model,
-                    rms_norm=True,
+                    rms_norm=False,
                     residual_in_fp32=True,
-                    fused_add_norm=True,
+                    fused_add_norm=False,
                     layer_idx=i,
                 )
                 for i in range(args.mamba_layers)
@@ -102,6 +78,7 @@ class MambaTransformer(nn.Module):
         position_ids = position_ids.unsqueeze(0)
         x = self.embed_in(input_ids)
         x = self.emb_dropout(x)
+        
         head_mask = [None] * (self.args.first_transformer_layers+1)
         for i, layer in enumerate(self.first_transformer_layers):
             outputs = layer(
@@ -112,9 +89,7 @@ class MambaTransformer(nn.Module):
                 use_cache=True,
             )
             x = outputs[0]
-            
-        # x = self.projection_layer(x)
-        # x = self.activation(x)
+
         if torch.is_autocast_enabled():
             with torch.cuda.amp.autocast(enabled=False):
                 residual = None
@@ -122,6 +97,7 @@ class MambaTransformer(nn.Module):
                     x, residual = layer(
                         x, residual
                     )
+                x = x + residual
                 x = self.final_transformer_layer(
                     x,
                     attention_mask=attention_mask,
@@ -139,6 +115,7 @@ class MambaTransformer(nn.Module):
                 x, residual = layer(
                     x, residual
                 )
+            x = x + residual
             x = self.final_transformer_layer(
                 x,
                 attention_mask=attention_mask,
@@ -150,13 +127,10 @@ class MambaTransformer(nn.Module):
             x = self.final_layer_norm(x)
             logits = self.embed_out(x)
             return logits
-        #detect_overflow(x, "After Mamba layers")
-
-        
 
     
     @staticmethod
-    def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str):
+    def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str, first_transformer_layers=7, mamba_start_layer=20, mamba_end_layer=23):
         """Load pretrained weights from HuggingFace into model.
     
         Args:
@@ -185,9 +159,6 @@ class MambaTransformer(nn.Module):
 
         # Originally we have 12 transformer layers, now we keep 8 and replace the next 3 with 4 mamba layers. 
         # But we still keep the last transformer layer.
-        mamba_start_layer = 20
-        mamba_end_layer = 23
-        first_transformer_layers=7
         args = ModelArgs(
             d_model=mamba_config_data['d_model'],
             mamba_layers=mamba_end_layer-mamba_start_layer+1,
@@ -258,36 +229,23 @@ class MambaTransformer(nn.Module):
 
 
 class MambaTransformerForLM(PreTrainedModel):
-    # def __init__(self, config=None, check_point_path=None):
-    #     super().__init__(config)
-    #     pretrained_mamba_name = 'state-spaces/mamba-130m'
-    #     pretrained_pythia_name = 'EleutherAI/pythia-160m'
-    #     self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
-    #     if check_point_path is not None:
-    #         loaded = load_file(check_point_path)
-    #         keys_to_change = list(loaded.keys())  # Create a list of keys to iterate over
-    #         for key in keys_to_change:
-    #             new_key = key.replace('model.', '')
-    #             loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
-    #         self.model.load_state_dict(loaded)
-    #     self.model.freeze_layers_except_mamba()
-
-    # def forward(self, input_ids, attention_mask, labels, teacher_probabilities=None):
-    #     logits = self.model(input_ids, attention_mask)
-    #     if labels is not None and teacher_probabilities is None:
-    #         loss_fct = torch.nn.CrossEntropyLoss()
-    #         shift_logits = logits[:, :-1, :].contiguous()
-    #         labels = labels[:, 1:].contiguous()
-    #         loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-    #         #loss = loss_fct(shift_logits.transpose(1, 2), labels)
-    #         return {"loss": loss, "logits": logits}
-    #     return {"logits": logits}
-
-    def __init__(self, config=None, check_point_path=None, distilling=None, T=4, distill_loss_weight=0.75):
+    def __init__(self, 
+            config=None, 
+            check_point_path=None, 
+            distilling=None, 
+            T=4, 
+            distill_loss_weight=0.75, 
+            first_transformer_layers=7, 
+            mamba_start_layer=20, 
+            mamba_end_layer=23):
         super().__init__(config)
         pretrained_mamba_name = 'state-spaces/mamba-130m'
         pretrained_pythia_name = 'EleutherAI/pythia-160m'
-        self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, pretrained_pythia_name)
+        self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, 
+                                                      pretrained_pythia_name, 
+                                                      first_transformer_layers, 
+                                                      mamba_start_layer, 
+                                                      mamba_end_layer)
         if check_point_path is not None:
             loaded = load_file(check_point_path)
             keys_to_change = list(loaded.keys())  # Create a list of keys to iterate over
