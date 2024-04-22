@@ -1,10 +1,7 @@
 EleutherAI/
 state-spaces/
-mamba_transformer_20_23/
-mamba_transformer_20_23_2e-4/
-mamba_transformer_16_19/
-mamba_transformer_12_15/
-pythia_mamba_20_23_2e-4_update/
+**/*.safetensors
+**/*.pt
 .vscode/
 __pycache__/
 *.gz
