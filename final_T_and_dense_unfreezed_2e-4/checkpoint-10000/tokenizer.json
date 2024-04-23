@@ -1,11 +1,6 @@
 {
   "version": "1.0",
-  "truncation": {
-    "direction": "Right",
-    "max_length": 256,
-    "strategy": "LongestFirst",
-    "stride": 0
-  },
+  "truncation": null,
   "padding": null,
   "added_tokens": [
     {
@@ -244,10 +239,30 @@
     "use_regex": true
   },
   "post_processor": {
-    "type": "ByteLevel",
-    "add_prefix_space": false,
-    "trim_offsets": true,
-    "use_regex": true
+    "type": "TemplateProcessing",
+    "single": [
+      {
+        "Sequence": {
+          "id": "A",
+          "type_id": 0
+        }
+      }
+    ],
+    "pair": [
+      {
+        "Sequence": {
+          "id": "A",
+          "type_id": 0
+        }
+      },
+      {
+        "Sequence": {
+          "id": "B",
+          "type_id": 1
+        }
+      }
+    ],
+    "special_tokens": {}
   },
   "decoder": {
     "type": "ByteLevel",
@@ -263,6 +278,7 @@
     "end_of_word_suffix": null,
     "fuse_unk": false,
     "byte_fallback": false,
+    "ignore_merges": false,
     "vocab": {
       "<|endoftext|>": 0,
       "<|padding|>": 1,

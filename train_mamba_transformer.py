@@ -52,7 +52,7 @@ model = MambaTransformerForLM(MambaTransformerConfig())
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="mamba_final_transformer_unfreezed",
+    output_dir="mamba_no_final_transformer_embedding_unfreezed",
     per_device_train_batch_size=48,
     per_device_eval_batch_size=64,
     evaluation_strategy="steps",

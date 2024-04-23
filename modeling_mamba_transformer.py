@@ -43,7 +43,7 @@ class MambaTransformer(nn.Module):
             ]
         )
         self._use_flash_attention_2 = args.transformer_config._attn_implementation == "flash_attention_2"
-        self.final_transformer_layer = GPTNeoXLayer(args.transformer_config)
+        #self.final_transformer_layer = GPTNeoXLayer(args.transformer_config)
         self.final_layer_norm = nn.LayerNorm(args.transformer_config.hidden_size, eps=args.transformer_config.layer_norm_eps)
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
         self.embed_out.weight = self.embed_in.weight  # Tie output projection to embedding weights.
@@ -98,13 +98,13 @@ class MambaTransformer(nn.Module):
                         x, residual
                     )
                 x = x + residual
-                x = self.final_transformer_layer(
-                    x,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    head_mask=head_mask[self.args.first_transformer_layers],
-                    use_cache=True,
-                )[0]
+                # x = self.final_transformer_layer(
+                #     x,
+                #     attention_mask=attention_mask,
+                #     position_ids=position_ids,
+                #     head_mask=head_mask[self.args.first_transformer_layers],
+                #     use_cache=True,
+                # )[0]
 
                 x = self.final_layer_norm(x)
                 logits = self.embed_out(x)
@@ -116,13 +116,13 @@ class MambaTransformer(nn.Module):
                     x, residual
                 )
             x = x + residual
-            x = self.final_transformer_layer(
-                x,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                head_mask=head_mask[self.args.first_transformer_layers],
-                use_cache=True,
-            )[0]
+            # x = self.final_transformer_layer(
+            #     x,
+            #     attention_mask=attention_mask,
+            #     position_ids=position_ids,
+            #     head_mask=head_mask[self.args.first_transformer_layers],
+            #     use_cache=True,
+            # )[0]
 
             x = self.final_layer_norm(x)
             logits = self.embed_out(x)
@@ -225,8 +225,12 @@ class MambaTransformer(nn.Module):
         for layer in self.mamba_layers:
             for param in layer.parameters():
                 param.requires_grad = True
-        for param in self.final_transformer_layer.parameters():
-                param.requires_grad = True
+        # for param in self.final_transformer_layer.parameters():
+        #     param.requires_grad = True
+        for param in self.final_layer_norm.parameters():
+            param.requires_grad = True
+        for param in self.embed_out.parameters():
+            param.requires_grad = True
 
 
 class MambaTransformerForLM(PreTrainedModel):
