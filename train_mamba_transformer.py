@@ -42,25 +42,24 @@ def tokenize(raw_dataset):
             input_batch.append(input_ids)
             attention_mask.append(attn_mask)
     return {"input_ids": input_batch, "attention_mask": attention_mask}
-
 raw_dataset = prepare_dataset(train_file, val_file)
 tokenized_datasets = raw_dataset.map(
     tokenize, batched=True, remove_columns=raw_dataset['train'].column_names
 )
 
-model = MambaTransformerForLM(MambaTransformerConfig())
+model = MambaTransformerForLM(MambaTransformerConfig(), distilling=True)
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="mamba_no_final_transformer_embedding_unfreezed",
-    per_device_train_batch_size=48,
+    output_dir="distilling_mamba_everything_unfreezed",
+    per_device_train_batch_size=20,
     per_device_eval_batch_size=64,
     evaluation_strategy="steps",
     eval_steps=20000,
     logging_steps=50,
-    gradient_accumulation_steps=1,
+    gradient_accumulation_steps=2,
     num_train_epochs=1,
-    learning_rate=2e-4,
+    learning_rate=1.6e-4,
     save_steps=5000,
     fp16=True
 )
