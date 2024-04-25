@@ -232,6 +232,7 @@ class MambaTransformerForLM(PreTrainedModel):
         super().__init__(config)
         pretrained_mamba_name = 'state-spaces/mamba-130m'
         pretrained_pythia_name = 'EleutherAI/pythia-160m'
+        teacher_name = 'EleutherAI/pythia-410m'
         self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, 
                                                       pretrained_pythia_name, 
                                                       first_transformer_layers, 
@@ -249,7 +250,7 @@ class MambaTransformerForLM(PreTrainedModel):
         if distilling:
             self.batch_count = 0
             device = 'cuda'
-            self.teacher = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
+            self.teacher = AutoModelForCausalLM.from_pretrained(teacher_name).to(device)
             self.T = T
             self.distill_loss_weight = distill_loss_weight
             self.log_steps = 0
@@ -280,7 +281,7 @@ class MambaTransformerForLM(PreTrainedModel):
                 self.ce_loss_sum += cross_entropy_loss.item()
                 self.distill_loss_sum += distill_loss.item()
 
-                if self.batch_count == 100:
+                if self.batch_count == 50:
                     self.log_steps += 50
                     s = "Step:" + str(self.log_steps) + ",CE loss:" + str(self.ce_loss_sum / 100) + ",Soft loss:" + str(self.distill_loss_sum / 100)+'\n'
                     print(s)
