@@ -51,7 +51,7 @@ model = MambaTransformerForLM(MambaTransformerConfig(), distilling=True)
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="distilling_mamba_everything_unfreezed",
+    output_dir="distilling_mamba_alpha_0.5_t_4_1.3e-4",
     per_device_train_batch_size=20,
     per_device_eval_batch_size=64,
     evaluation_strategy="steps",
@@ -59,7 +59,7 @@ args = TrainingArguments(
     logging_steps=50,
     gradient_accumulation_steps=2,
     num_train_epochs=1,
-    learning_rate=1.6e-4,
+    learning_rate=1.3e-4,
     save_steps=5000,
     fp16=True
 )

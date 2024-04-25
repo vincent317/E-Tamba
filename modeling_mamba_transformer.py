@@ -224,8 +224,8 @@ class MambaTransformerForLM(PreTrainedModel):
             config=None, 
             check_point_path=None, 
             distilling=False, 
-            T=2, 
-            distill_loss_weight=0.75, 
+            T=4, 
+            distill_loss_weight=0.5, 
             first_transformer_layers=7, 
             mamba_start_layer=20, 
             mamba_end_layer=23):
@@ -238,13 +238,12 @@ class MambaTransformerForLM(PreTrainedModel):
                                                       mamba_start_layer, 
                                                       mamba_end_layer)
         if check_point_path is not None:
-            
             loaded = load_file(check_point_path)
             keys_to_change = list(loaded.keys())  # Create a list of keys to iterate over
             for key in keys_to_change:
                 new_key = key.replace('model.', '')
                 loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
-            self.model.load_state_dict(loaded)
+            self.model.load_state_dict(loaded, strict=False)
         self.model.freeze_layers_except_mamba()
         self.teacher = None
         if distilling:
@@ -253,6 +252,9 @@ class MambaTransformerForLM(PreTrainedModel):
             self.teacher = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
             self.T = T
             self.distill_loss_weight = distill_loss_weight
+            self.log_steps = 0
+            self.ce_loss_sum = 0
+            self.distill_loss_sum = 0
 
     def forward(self, input_ids, attention_mask, labels):
         logits = self.model(input_ids, attention_mask, self.dtype)
@@ -275,10 +277,20 @@ class MambaTransformerForLM(PreTrainedModel):
                 t_probs = F.softmax(teacher_logits/self.T, dim=-1)
                 distill_loss = kl_loss(s_log_probs, t_probs) / t_probs.size()[1] * (self.T**2)
                 total_loss = self.distill_loss_weight*distill_loss + (1-self.distill_loss_weight)*cross_entropy_loss
-                
-                if self.batch_count == 50:
+                self.ce_loss_sum += cross_entropy_loss.item()
+                self.distill_loss_sum += distill_loss.item()
+
+                if self.batch_count == 100:
+                    self.log_steps += 50
+                    s = "Step:" + str(self.log_steps) + ",CE loss:" + str(self.ce_loss_sum / 100) + ",Soft loss:" + str(self.distill_loss_sum / 100)+'\n'
+                    print(s)
+                    # Open a file in append mode
+                    with open('record.txt', 'a') as file:
+                        file.write(s)
+                    self.ce_loss_sum = 0
+                    self.distill_loss_sum = 0
                     self.batch_count = 0
-                    print("Distill loss: " + str(distill_loss.item()) + " Soft loss: " + str(cross_entropy_loss.item()))
+
                 return {"loss": total_loss, "logits": logits}        
             else:
                 return {"loss": cross_entropy_loss, "logits": logits}        

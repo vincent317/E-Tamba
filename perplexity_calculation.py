@@ -43,7 +43,7 @@ input_ids = tokenized_datasets['train']['input_ids']
 attn_mask = tokenized_datasets['train']['attention_mask']
 
 ppxes = []
-checkpoint_point_path = 'mamba_transformer_20_23_2e-4/checkpoint-10000/model.safetensors'
+checkpoint_point_path = 'distilling_mamba_alpha_0.5_t_4_1.3e-4/checkpoint-10000/model.safetensors'
 model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
 #model = AutoModelForCausalLM.from_pretrained(pretrained_mamba_name).to(device)
 
