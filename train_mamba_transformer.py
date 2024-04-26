@@ -47,21 +47,22 @@ tokenized_datasets = raw_dataset.map(
     tokenize, batched=True, remove_columns=raw_dataset['train'].column_names
 )
 
-model = MambaTransformerForLM(MambaTransformerConfig(), distilling=True)
+model = MambaTransformerForLM(MambaTransformerConfig())
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
     output_dir="distilling_mamba_alpha_0.5_t_4_1.3e-4",
-    per_device_train_batch_size=16,
+    per_device_train_batch_size=48,
     per_device_eval_batch_size=64,
     evaluation_strategy="steps",
     eval_steps=20000,
     logging_steps=50,
-    gradient_accumulation_steps=3,
+    gradient_accumulation_steps=1,
     num_train_epochs=1,
-    learning_rate=1.3e-4,
+    learning_rate=2e-4,
     save_steps=5000,
-    fp16=True
+    fp16=True,
+    warmup_ratio=0.1
 )
 
 trainer = Trainer(

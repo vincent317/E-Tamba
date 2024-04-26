@@ -20,6 +20,22 @@ class ModelArgs:
     transformer_config: GPTNeoXConfig
     mamba_config: dict
 
+class Adapter(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.down_proj = nn.Linear(hidden_dim, hidden_dim // 4)
+        self.up_proj = nn.Linear(hidden_dim // 4, hidden_dim)
+        self.non_linear = nn.ReLU()
+        torch.nn.init.zeros_(self.down_proj.weight)
+        torch.nn.init.zeros_(self.down_proj.bias)
+        torch.nn.init.zeros_(self.up_proj.weight)
+        torch.nn.init.zeros_(self.up_proj.bias)
+    
+    def forward(self, x):
+        t = self.down_proj(x)
+        t = self.non_linear(t)
+        return self.up_proj(t) + x
+    
 class MambaTransformer(nn.Module):
     def __init__(self, args: ModelArgs):
         """Full Mamba model."""
@@ -29,7 +45,7 @@ class MambaTransformer(nn.Module):
         self.embed_in = nn.Embedding(args.vocab_size, args.d_model)
         self.emb_dropout = nn.Dropout(args.transformer_config.hidden_dropout)
         self.first_transformer_layers = nn.ModuleList([GPTNeoXLayer(args.transformer_config) for _ in range(args.first_transformer_layers)])
-
+        self.adapter_in = Adapter(args.transformer_config.hidden_size)
         self.mamba_layers = nn.ModuleList(
             [
                 create_block(
@@ -42,15 +58,13 @@ class MambaTransformer(nn.Module):
                 for i in range(args.mamba_layers)
             ]
         )
+        self.adapter_out = Adapter(args.transformer_config.hidden_size)
         self._use_flash_attention_2 = args.transformer_config._attn_implementation == "flash_attention_2"
         self.final_transformer_layer = GPTNeoXLayer(args.transformer_config)
         self.final_layer_norm = nn.LayerNorm(args.transformer_config.hidden_size, eps=args.transformer_config.layer_norm_eps)
         self.embed_out = nn.Linear(args.d_model, args.vocab_size, bias=False)
         self.embed_out.weight = self.embed_in.weight  # Tie output projection to embedding weights.
                                                      # See "Weight Tying" paper
-        # self.connection_layer = nn.Linear(args.transformer_config.hidden_size, args.transformer_config.hidden_size)
-        # torch.nn.init.eye_(self.connection_layer.weight)
-        # torch.nn.init.zeros_(self.connection_layer.bias)
     
     def forward(self, input_ids, attention_mask, attn_dtype):
         input_shape = input_ids.size()
@@ -94,13 +108,14 @@ class MambaTransformer(nn.Module):
             x = outputs[0]
 
         with torch.cuda.amp.autocast(enabled=False):
-            # x = self.connection_layer(x)
+            x = self.adapter_in(x)
             residual = None
             for layer in self.mamba_layers:
                 x, residual = layer(
                     x, residual
                 )
             x = x + residual
+            x = self.adapter_out(x)
             x = self.final_transformer_layer(
                 x,
                 attention_mask=attention_mask,
@@ -206,17 +221,19 @@ class MambaTransformer(nn.Module):
             param.requires_grad = False
 
         # Unfreeze parameters in the Mamba layers and projection layers
-        # for param in self.connection_layer.parameters():
+        for param in self.adapter_in.parameters():
+            param.requires_grad = True
+        # for layer in self.mamba_layers:
+        #     for param in layer.parameters():
+        #         param.requires_grad = True
+        for param in self.adapter_out.parameters():
+            param.requires_grad = True
+        # for param in self.final_transformer_layer.parameters():
         #     param.requires_grad = True
-        for layer in self.mamba_layers:
-            for param in layer.parameters():
-                param.requires_grad = True
-        for param in self.final_transformer_layer.parameters():
-            param.requires_grad = True
-        for param in self.final_layer_norm.parameters():
-            param.requires_grad = True
-        for param in self.embed_out.parameters():
-            param.requires_grad = True
+        # for param in self.final_layer_norm.parameters():
+        #     param.requires_grad = True
+        # for param in self.embed_out.parameters():
+        #     param.requires_grad = True
 
 
 class MambaTransformerForLM(PreTrainedModel):

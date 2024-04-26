@@ -45,15 +45,16 @@ attn_mask = tokenized_datasets['train']['attention_mask']
 ppxes = []
 checkpoint_point_path = 'distilling_mamba_alpha_0.5_t_4_1.3e-4/checkpoint-10000/model.safetensors'
 model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
+model.eval()
 #model = AutoModelForCausalLM.from_pretrained(pretrained_mamba_name).to(device)
 
-for b in tqdm(range(0, len(input_ids), batch_size)):
-    batch_input_ids = torch.tensor(input_ids[b:b+batch_size]).to(device)
-    batch_attn_mask = torch.tensor(attn_mask[b:b+batch_size]).to(device)
-    with torch.no_grad():
+with torch.no_grad():
+    for b in tqdm(range(0, len(input_ids), batch_size)):
+        batch_input_ids = torch.tensor(input_ids[b:b+batch_size]).to(device)
+        batch_attn_mask = torch.tensor(attn_mask[b:b+batch_size]).to(device)
         outputs = model(input_ids=batch_input_ids, attention_mask=batch_attn_mask, labels=batch_input_ids)
-    ppx = torch.exp(outputs['loss']).item()
-    print(outputs['loss'])
-    ppxes.append(ppx)
+        ppx = torch.exp(outputs['loss']).item()
+        print(outputs['loss'])
+        ppxes.append(ppx)
 
 print(sum(ppxes) / len(ppxes))
