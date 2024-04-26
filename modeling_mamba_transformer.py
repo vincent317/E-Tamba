@@ -25,7 +25,7 @@ class Adapter(nn.Module):
         super().__init__()
         self.down_proj = nn.Linear(hidden_dim, hidden_dim // 4)
         self.up_proj = nn.Linear(hidden_dim // 4, hidden_dim)
-        self.non_linear = nn.ReLU()
+        self.non_linear = nn.Sigmoid()
         torch.nn.init.zeros_(self.down_proj.weight)
         torch.nn.init.zeros_(self.down_proj.bias)
         torch.nn.init.zeros_(self.up_proj.weight)

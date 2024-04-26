@@ -62,7 +62,7 @@ args = TrainingArguments(
     learning_rate=2e-4,
     save_steps=5000,
     fp16=True,
-    warmup_ratio=0.1
+    warmup_ratio=0.05
 )
 
 trainer = Trainer(
