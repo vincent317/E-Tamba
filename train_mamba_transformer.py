@@ -11,7 +11,7 @@ pretrained_mamba_name = 'state-spaces/mamba-130m'
 pretrained_pythia_name = 'EleutherAI/pythia-160m'
 tokenizer = AutoTokenizer.from_pretrained(pretrained_pythia_name, padding_side='left')
 tokenizer.pad_token = tokenizer.eos_token
-seq_len = 256
+seq_len = 1024
 train_file = "en/c4-train.00000-of-01024.json.gz"
 val_file = "en/c4-validation.00000-of-00008.json.gz"
 
@@ -51,18 +51,17 @@ model = MambaTransformerForLM(MambaTransformerConfig())
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="distilling_mamba_alpha_0.5_t_4_1.3e-4",
-    per_device_train_batch_size=48,
-    per_device_eval_batch_size=64,
+    output_dir="seq_len_2048_6_transformer_layers",
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
     evaluation_strategy="steps",
-    eval_steps=20000,
+    eval_steps=3500,
     logging_steps=50,
     gradient_accumulation_steps=1,
-    num_train_epochs=1,
+    num_train_epochs=2,
     learning_rate=2e-4,
-    save_steps=5000,
-    fp16=True,
-    warmup_ratio=0.05
+    save_steps=3500,
+    fp16=True
 )
 
 trainer = Trainer(

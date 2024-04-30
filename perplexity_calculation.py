@@ -8,9 +8,9 @@ from tqdm import tqdm
 
 pretrained_mamba_name = 'state-spaces/mamba-130m-hf'
 pretrained_pythia_name = 'EleutherAI/pythia-160m'
-seq_len = 256
-batch_size = 32
-val_file = "en/c4-validation.00001-of-00008.json.gz"
+seq_len = 1024
+batch_size = 8
+val_file = "en/c4-validation.00000-of-00008.json.gz"
 device = 'cuda'
 
 def prepare_val_dataset(val_file):
@@ -43,10 +43,10 @@ input_ids = tokenized_datasets['train']['input_ids']
 attn_mask = tokenized_datasets['train']['attention_mask']
 
 ppxes = []
-checkpoint_point_path = 'distilling_mamba_alpha_0.5_t_4_1.3e-4/checkpoint-10000/model.safetensors'
-model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
+checkpoint_point_path = 'no_pretrained_weight_bs48/checkpoint-10000/model.safetensors'
+#model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
+model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
 model.eval()
-#model = AutoModelForCausalLM.from_pretrained(pretrained_mamba_name).to(device)
 
 with torch.no_grad():
     for b in tqdm(range(0, len(input_ids), batch_size)):
