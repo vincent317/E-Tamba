@@ -51,16 +51,16 @@ model = MambaTransformerForLM(MambaTransformerConfig())
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="seq_len_2048_6_transformer_layers",
+    output_dir="seq_len_1024_4_transformer_layers",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
     evaluation_strategy="steps",
-    eval_steps=3500,
+    eval_steps=2000,
     logging_steps=50,
     gradient_accumulation_steps=1,
-    num_train_epochs=2,
+    num_train_epochs=3,
     learning_rate=2e-4,
-    save_steps=3500,
+    save_steps=2000,
     fp16=True
 )
 

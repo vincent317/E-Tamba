@@ -125,7 +125,7 @@ class MambaTransformer(nn.Module):
             return logits
     
     @staticmethod
-    def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str, first_transformer_layers=6, mamba_start_layer=18, mamba_end_layer=23):
+    def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str, first_transformer_layers=6, mamba_start_layer=23, mamba_end_layer=23):
         """Load pretrained weights from HuggingFace into model.
     
         Args:
@@ -236,7 +236,7 @@ class MambaTransformerForLM(PreTrainedModel):
             T=4, 
             distill_loss_weight=0.5, 
             first_transformer_layers=6, 
-            mamba_start_layer=18, 
+            mamba_start_layer=23, 
             mamba_end_layer=23):
         super().__init__(config)
         pretrained_mamba_name = 'state-spaces/mamba-130m'
