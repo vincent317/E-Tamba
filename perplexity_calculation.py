@@ -69,8 +69,8 @@ from tqdm import tqdm
 pretrained_mamba_name = 'state-spaces/mamba-130m-hf'
 pretrained_pythia_name = 'EleutherAI/pythia-160m'
 seq_len = 256
-batch_size = 32
-val_file = "en/c4-validation.00001-of-00008.json.gz"
+batch_size = 8
+val_file = "en/c4-validation.00000-of-00008.json.gz"
 device = 'cuda'
 
 def prepare_val_dataset(val_file):
@@ -105,15 +105,15 @@ attn_mask = tokenized_datasets['train']['attention_mask']
 ppxes = []
 checkpoint_point_path = 'mamba_transformer_16_19/checkpoint-10000/model.safetensors'
 #model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
-model = AutoModelForCausalLM.from_pretrained(pretrained_mamba_name).to(device)
+model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
 
-for b in tqdm(range(0, len(input_ids), batch_size)):
-    batch_input_ids = torch.tensor(input_ids[b:b+batch_size]).to(device)
-    batch_attn_mask = torch.tensor(attn_mask[b:b+batch_size]).to(device)
-    with torch.no_grad():
+with torch.no_grad():
+    for b in tqdm(range(0, len(input_ids), batch_size)):
+        batch_input_ids = torch.tensor(input_ids[b:b+batch_size]).to(device)
+        batch_attn_mask = torch.tensor(attn_mask[b:b+batch_size]).to(device)
         outputs = model(input_ids=batch_input_ids, attention_mask=batch_attn_mask, labels=batch_input_ids)
-    ppx = torch.exp(outputs['loss']).item()
-    print(outputs['loss'])
-    ppxes.append(ppx)
+        ppx = torch.exp(outputs['loss']).item()
+        print(outputs['loss'])
+        ppxes.append(ppx)
 
 print(sum(ppxes) / len(ppxes))
