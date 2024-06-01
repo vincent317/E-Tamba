@@ -231,6 +231,7 @@ class MambaTransformerForLM(PreTrainedModel):
     def __init__(self, 
             config=None, 
             check_point_path=None, 
+            sft=False,
             distilling=False, 
             T=4, 
             distill_loss_weight=0.5, 
@@ -271,10 +272,20 @@ class MambaTransformerForLM(PreTrainedModel):
         if labels is None:
             return {"logits": logits}
         else:
-            cross_entropy_fcn = nn.CrossEntropyLoss()
-            shift_logits = logits[:, :-1, :].contiguous()
-            labels = labels[:, 1:].contiguous()
-            cross_entropy_loss = cross_entropy_fcn(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+            
+            if not self.sft:
+                cross_entropy_fcn = nn.CrossEntropyLoss()
+                shift_logits = logits[:, :-1, :].contiguous()
+                labels = labels[:, 1:].contiguous()
+                cross_entropy_loss = cross_entropy_fcn(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+            else:
+                ignore_index = -1
+                shift_logits = logits[:, :-1, :].contiguous()
+                labels = labels[:, 1:].contiguous()
+                seq_len = labels.size()[1]
+                labels[:, :seq_len // 2] = ignore_index
+                criterion = nn.CrossEntropyLoss(ignore_index=ignore_index)
+                cross_entropy_loss = cross_entropy_fcn(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
             
             if self.teacher is not None:
                 kl_loss = nn.KLDivLoss(reduction="batchmean")
