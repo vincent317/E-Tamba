@@ -103,9 +103,9 @@ input_ids = tokenized_datasets['train']['input_ids']
 attn_mask = tokenized_datasets['train']['attention_mask']
 
 ppxes = []
-checkpoint_point_path = 'mamba_transformer_16_19/checkpoint-10000/model.safetensors'
-#model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
-model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
+checkpoint_point_path = 'seq_len_3_epochs_1024_6_6_1_2_train_set_sft/checkpoint-25600/model.safetensors'
+model = MambaTransformerForLM(MambaTransformerConfig(), checkpoint_point_path)
+#model = AutoModelForCausalLM.from_pretrained(pretrained_pythia_name).to(device)
 
 with torch.no_grad():
     for b in tqdm(range(0, len(input_ids), batch_size)):

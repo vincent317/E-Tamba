@@ -254,8 +254,9 @@ class MambaTransformerForLM(PreTrainedModel):
                 new_key = key.replace('model.', '')
                 loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
             self.model.load_state_dict(loaded, strict=False)
-        #self.model.freeze_layers_except_mamba()
+        self.model.freeze_layers_except_mamba()
         self.teacher = None
+        self.sft = sft
         if distilling:
             self.batch_count = 0
             device = 'cuda'
@@ -272,7 +273,6 @@ class MambaTransformerForLM(PreTrainedModel):
         if labels is None:
             return {"logits": logits}
         else:
-            
             if not self.sft:
                 cross_entropy_fcn = nn.CrossEntropyLoss()
                 shift_logits = logits[:, :-1, :].contiguous()
@@ -283,10 +283,10 @@ class MambaTransformerForLM(PreTrainedModel):
                 shift_logits = logits[:, :-1, :].contiguous()
                 labels = labels[:, 1:].contiguous()
                 seq_len = labels.size()[1]
-                labels[:, :seq_len // 2] = ignore_index
+                labels[:, :(seq_len+1) // 3 * 2-1] = ignore_index
+                #labels[:, seq_len // 2:] = ignore_index
                 criterion = nn.CrossEntropyLoss(ignore_index=ignore_index)
-                cross_entropy_loss = cross_entropy_fcn(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-            
+                cross_entropy_loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
             if self.teacher is not None:
                 kl_loss = nn.KLDivLoss(reduction="batchmean")
                 self.batch_count += 1
