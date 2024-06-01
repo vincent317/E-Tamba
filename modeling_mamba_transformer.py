@@ -253,7 +253,7 @@ class MambaTransformerForLM(PreTrainedModel):
                 new_key = key.replace('model.', '')
                 loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
             self.model.load_state_dict(loaded, strict=False)
-        self.model.freeze_layers_except_mamba()
+        #self.model.freeze_layers_except_mamba()
         self.teacher = None
         if distilling:
             self.batch_count = 0
