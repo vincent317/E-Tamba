@@ -7,11 +7,13 @@ import numpy as np
 from tqdm import tqdm
 from datasets import load_dataset, Dataset, DatasetDict
 
-pretrained_mamba_name = 'state-spaces/mamba-130m'
-pretrained_pythia_name = 'EleutherAI/pythia-160m'
+pretrained_mamba_name = 'state-spaces/mamba-1.4b-hf'
+pretrained_pythia_name = 'EleutherAI/pythia-1.4b'
+
 tokenizer = AutoTokenizer.from_pretrained(pretrained_pythia_name, padding_side='left')
 tokenizer.pad_token = tokenizer.eos_token
 seq_len = 1024
+
 #train_file = ["en/c4-train.00000-of-01024.json.gz", "en/c4-train.00001-of-01024.json.gz"]
 train_file = ["en/c4-train.00000-of-01024.json.gz"]
 val_file = "en/c4-validation.00000-of-00008.json.gz"
@@ -48,21 +50,27 @@ tokenized_datasets = raw_dataset.map(
     tokenize, batched=True, remove_columns=raw_dataset['train'].column_names
 )
 
-model = MambaTransformerForLM(MambaTransformerConfig())
+model = MambaTransformerForLM(
+    MambaTransformerConfig(), 
+    pretrained_mamba_name=pretrained_mamba_name,
+    pretrained_pythia_name=pretrained_pythia_name,
+    first_transformer_layers=12,
+    mamba_start_layer=36,
+    mamba_end_layer=47)
+
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 args = TrainingArguments(
-    output_dir="seq_len_3_epochs_6_6_1",
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
+    output_dir="base_1.4b_1024len_12_12_1_3_epochs",
+    per_device_train_batch_size=2,
+    per_device_eval_batch_size=4,
     evaluation_strategy="steps",
-    eval_steps=2000,
+    eval_steps=2200,
     logging_steps=50,
-    gradient_accumulation_steps=2,
+    gradient_accumulation_steps=8,
     num_train_epochs=3,
     learning_rate=2e-4,
-    save_steps=2000,
-    fp16=True
+    save_steps=1100,
 )
 
 trainer = Trainer(

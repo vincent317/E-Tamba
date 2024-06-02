@@ -125,7 +125,7 @@ class MambaTransformer(nn.Module):
             return logits
     
     @staticmethod
-    def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str, first_transformer_layers=6, mamba_start_layer=18, mamba_end_layer=23):
+    def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str, first_transformer_layers=None, mamba_start_layer=None, mamba_end_layer=None):
         """Load pretrained weights from HuggingFace into model.
     
         Args:
@@ -169,16 +169,13 @@ class MambaTransformer(nn.Module):
                                                 _raise_exceptions_for_missing_entries=False)
             return torch.load(resolved_archive_file, weights_only=True, map_location='cuda', mmap=True)
         
-        mamba_state_dict, pythia_state_dict = load_state_dict_hf(pretrained_mamba_name), load_state_dict_hf(pretrained_pythia_name)
+        pythia_state_dict = load_state_dict_hf(pretrained_pythia_name)
 
         transformer_target_layers_set = set()
-        mamba_target_layers_set = set()
 
         for i in range(first_transformer_layers):
             transformer_target_layers_set.add(i)
         transformer_target_layers_set.add(pythia_config_data.num_hidden_layers-1)
-        for i in range(mamba_start_layer, mamba_end_layer+1):
-            mamba_target_layers_set.add(i)
         
         pattern = r".layers\.(\d+)\."
 
@@ -230,17 +227,20 @@ class MambaTransformer(nn.Module):
 class MambaTransformerForLM(PreTrainedModel):
     def __init__(self, 
             config=None, 
+            pretrained_mamba_name=None,
+            pretrained_pythia_name=None,
             check_point_path=None, 
             sft=False,
             distilling=False, 
             T=4, 
             distill_loss_weight=0.5, 
-            first_transformer_layers=6, 
-            mamba_start_layer=18, 
-            mamba_end_layer=23):
+            first_transformer_layers=None, 
+            mamba_start_layer=None, 
+            mamba_end_layer=None):
         super().__init__(config)
-        pretrained_mamba_name = 'state-spaces/mamba-130m'
-        pretrained_pythia_name = 'EleutherAI/pythia-160m'
+        self.pretrained_mamba_name = pretrained_mamba_name
+        self.pretrained_pythia_name = pretrained_pythia_name
+        
         teacher_name = 'EleutherAI/pythia-410m'
         self.model = MambaTransformer.from_pretrained(pretrained_mamba_name, 
                                                       pretrained_pythia_name, 
