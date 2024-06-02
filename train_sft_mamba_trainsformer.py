@@ -20,13 +20,13 @@ def prepare_dataset(train_file, val_file):
     c4_valid_subset = load_dataset("allenai/c4", data_files=data_files, split='validation')
     return DatasetDict(
         {
-            "train": c4_train_subset.shuffle().select(range(15000)),
-            "valid": c4_valid_subset.shuffle().select(range(1000))
+            "train": c4_train_subset.shuffle().select(range(2000)),
+            "valid": c4_valid_subset.shuffle().select(range(200))
         }
     )
 
 def tokenize(raw_dataset):
-    base_seq_len = 50
+    base_seq_len = 100
     outputs = tokenizer(
         raw_dataset['text'],
         truncation=True,
@@ -52,21 +52,21 @@ if __name__ == '__main__':
     )
 
     model = MambaTransformerForLM(MambaTransformerConfig(), 
-                                check_point_path='seq_len_3_epochs_6_6_1/checkpoint-10000/model.safetensors',
+                                check_point_path='base_1024len_6_6_1_3_epochs/checkpoint-10000/model.safetensors',
                                 sft=True)
     data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
     args = TrainingArguments(
-        output_dir="seq_len_3_epochs_1024_6_6_1_2_train_set_sft",
+        output_dir="sft_1_epoch_100_length_2000_samples",
         per_device_train_batch_size=16,
         per_device_eval_batch_size=8,
         evaluation_strategy="steps",
-        eval_steps=800,
+        eval_steps=540,
         logging_steps=50,
         gradient_accumulation_steps=1,
-        num_train_epochs=3,
-        learning_rate=5e-5,
-        save_steps=800,
+        num_train_epochs=1,
+        learning_rate=1e-5,
+        save_steps=540,
         fp16=True
     )
 
