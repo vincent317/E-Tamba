@@ -1,0 +1,7 @@
+transformers
+pytorch
+datasets
+mamba-ssm
+ausal-conv1d>=1.4.0
+matplotlib
+seaborn
