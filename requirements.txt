@@ -1,7 +1,7 @@
 transformers
-pytorch
+torch
 datasets
 mamba-ssm
-ausal-conv1d>=1.4.0
+causal-conv1d>=1.4.0
 matplotlib
 seaborn
