@@ -49,10 +49,11 @@ class MambaTransformer(nn.Module):
             [
                 create_block(
                     d_model=args.d_model,
-                    rms_norm=False,
-                    residual_in_fp32=True,
-                    fused_add_norm=False,
-                    layer_idx=i,
+                    d_intermediate=0,
+                    #rms_norm=False,
+                    #residual_in_fp32=True,
+                    #fused_add_norm=False,
+                    #layer_idx=i,
                 )
                 for i in range(args.mamba_layers)
             ]
@@ -105,24 +106,23 @@ class MambaTransformer(nn.Module):
             )
             x = outputs[0]
 
-        with torch.cuda.amp.autocast(enabled=False):
-            residual = None
-            for layer in self.mamba_layers:
-                x, residual = layer(
-                    x, residual
-                )
-            x = x + residual
-            x = self.final_transformer_layer(
-                x,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                head_mask=head_mask[self.args.first_transformer_layers],
-                use_cache=True,
-            )[0]
+        residual = None
+        for layer in self.mamba_layers:
+            x, residual = layer(
+                x, residual
+            )
+        x = x + residual
+        x = self.final_transformer_layer(
+            x,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            head_mask=head_mask[self.args.first_transformer_layers],
+            use_cache=True,
+        )[0]
 
-            x = self.final_layer_norm(x)
-            logits = self.embed_out(x)
-            return logits
+        x = self.final_layer_norm(x)
+        logits = self.embed_out(x)
+        return logits
     
     @staticmethod
     def from_pretrained(pretrained_mamba_name: str, pretrained_pythia_name: str, first_transformer_layers=None, mamba_start_layer=None, mamba_end_layer=None):
@@ -166,27 +166,30 @@ class MambaTransformer(nn.Module):
         
         def load_state_dict_hf(model_name, device=None, dtype=None):
             resolved_archive_file = cached_file(model_name, WEIGHTS_NAME,
-                                                _raise_exceptions_for_missing_entries=False)
+                                                _raise_exceptions_for_missing_entries=True)
             return torch.load(resolved_archive_file, weights_only=True, map_location='cuda', mmap=True)
-        
+        # breakpoint()
+        mamba_state_dict = load_state_dict_hf(pretrained_mamba_name)
         pythia_state_dict = load_state_dict_hf(pretrained_pythia_name)
-
         transformer_target_layers_set = set()
-
+        mamba_target_layers_set = set()
         for i in range(first_transformer_layers):
             transformer_target_layers_set.add(i)
         transformer_target_layers_set.add(pythia_config_data.num_hidden_layers-1)
+        for i in range(mamba_start_layer, mamba_end_layer+1):
+            mamba_target_layers_set.add(i)
         
         pattern = r".layers\.(\d+)\."
 
         new_state_dict = {}
-        # for key in mamba_state_dict:
-        #     match = re.search(pattern, key)
-        #     if match:
-        #         layer_index = int(match.group(1))
-        #         if layer_index in mamba_target_layers_set:
-        #             new_key = key.replace('backbone.layers', 'mamba_layers').replace(str(layer_index), str(layer_index-mamba_start_layer))
-        #             new_state_dict[new_key] = mamba_state_dict[key]
+        
+        for key in mamba_state_dict:
+            match = re.search(pattern, key)
+            if match:
+                layer_index = int(match.group(1))
+                if layer_index in mamba_target_layers_set:
+                    new_key = key.replace('backbone.layers', 'mamba_layers').replace(str(layer_index), str(layer_index-mamba_start_layer))
+                    new_state_dict[new_key] = mamba_state_dict[key]
 
         for key in pythia_state_dict:
             if 'embed' in key or 'final_layer_norm' in key:
@@ -204,25 +207,26 @@ class MambaTransformer(nn.Module):
                         new_state_dict[new_key] = pythia_state_dict[key]
         model.load_state_dict(new_state_dict, strict=False)
         model.embed_in = nn.Embedding.from_pretrained(pythia_state_dict['gpt_neox.embed_in.weight'].to(model.embed_in.weight.dtype))
-        model.embed_in.requires_grad_ = False
+        #breakpoint()
+        # model.embed_in.requires_grad_ = False
         return model
     
-    def freeze_layers_except_mamba(self):
-        """Freezes all parameters except for those in the Mamba layers."""
-        # Freeze all parameters in the model
-        for param in self.parameters():
-            param.requires_grad = False
+    # def freeze_layers_except_mamba(self):
+    #     """Freezes all parameters except for those in the Mamba layers."""
+    #     # Freeze all parameters in the model
+    #     for param in self.parameters():
+    #         param.requires_grad = False
 
-        # Unfreeze parameters in the Mamba layers and projection layers
-        for layer in self.mamba_layers:
-            for param in layer.parameters():
-                param.requires_grad = True
-        for param in self.final_transformer_layer.parameters():
-            param.requires_grad = True
-        for param in self.final_layer_norm.parameters():
-            param.requires_grad = True
-        for param in self.embed_out.parameters():
-            param.requires_grad = True
+    #     # Unfreeze parameters in the Mamba layers and projection layers
+    #     for layer in self.mamba_layers:
+    #         for param in layer.parameters():
+    #             param.requires_grad = True
+    #     for param in self.final_transformer_layer.parameters():
+    #         param.requires_grad = True
+    #     for param in self.final_layer_norm.parameters():
+    #         param.requires_grad = True
+    #     for param in self.embed_out.parameters():
+    #         param.requires_grad = True
 
 class MambaTransformerForLM(PreTrainedModel):
     def __init__(self, 
@@ -254,7 +258,7 @@ class MambaTransformerForLM(PreTrainedModel):
                 new_key = key.replace('model.', '')
                 loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
             self.model.load_state_dict(loaded, strict=False)
-        self.model.freeze_layers_except_mamba()
+        # self.model.freeze_layers_except_mamba()
         self.teacher = None
         self.sft = sft
         if distilling:
