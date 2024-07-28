@@ -102,16 +102,41 @@ data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 #     warmup_ratio=0.03
 # )
 
+# model = MambaTransformerForLM(
+#     MambaTransformerConfig(), 
+#     pretrained_mamba_name=pretrained_mamba_name,
+#     pretrained_pythia_name=pretrained_pythia_name,
+#     first_transformer_layers=12,
+#     mamba_start_layer=14,
+#     mamba_end_layer=25)
+
+# args = TrainingArguments(
+#     output_dir="trans_12_mamba_14_25",
+#     per_device_train_batch_size=4,
+#     per_device_eval_batch_size=4,
+#     eval_strategy="steps",
+#     eval_steps=900,
+#     logging_steps=10,
+#     gradient_accumulation_steps=16,
+#     num_train_epochs=1,
+#     learning_rate=1e-4,
+#     lr_scheduler_type='constant',
+#     save_steps=1800,
+#     max_grad_norm=3,
+#     bf16=True,
+#     warmup_ratio=0.03
+# )
+
 model = MambaTransformerForLM(
     MambaTransformerConfig(), 
     pretrained_mamba_name=pretrained_mamba_name,
     pretrained_pythia_name=pretrained_pythia_name,
     first_transformer_layers=12,
-    mamba_start_layer=14,
-    mamba_end_layer=25)
+    mamba_start_layer=3,
+    mamba_end_layer=14)
 
 args = TrainingArguments(
-    output_dir="trans_12_mamba_14_25",
+    output_dir="trans_12_mamba_3_14",
     per_device_train_batch_size=4,
     per_device_eval_batch_size=4,
     eval_strategy="steps",
