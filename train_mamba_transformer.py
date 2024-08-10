@@ -15,7 +15,7 @@ tokenizer.pad_token = tokenizer.eos_token
 seq_len = 1024
 
 #train_file = ["en/c4-train.00000-of-01024.json.gz", "en/c4-train.00001-of-01024.json.gz"]
-train_file = ["en/c4-train.00000-of-01024.json.gz"]
+train_file = ["en/c4-train.00000-of-01024.json.gz", "en/c4-train.00001-of-01024.json.gz", "en/c4-train.00002-of-01024.json.gz"]
 val_file = "en/c4-validation.00000-of-00008.json.gz"
 
 def prepare_dataset(train_file, val_file):
@@ -24,8 +24,8 @@ def prepare_dataset(train_file, val_file):
     c4_valid_subset = load_dataset("allenai/c4", data_files=data_files, split='validation')
     return DatasetDict(
         {
-            "train": c4_train_subset.shuffle().select(range(100000)),
-            "valid": c4_valid_subset.shuffle().select(range(10000))
+            "train": c4_train_subset.shuffle(),
+            "valid": c4_valid_subset.shuffle()
         }
     )
 
@@ -132,21 +132,21 @@ model = MambaTransformerForLM(
     pretrained_mamba_name=pretrained_mamba_name,
     pretrained_pythia_name=pretrained_pythia_name,
     first_transformer_layers=12,
-    mamba_start_layer=3,
-    mamba_end_layer=14)
+    mamba_start_layer=25,
+    mamba_end_layer=36)
 
 args = TrainingArguments(
     output_dir="trans_12_mamba_3_14",
     per_device_train_batch_size=4,
     per_device_eval_batch_size=4,
     eval_strategy="steps",
-    eval_steps=900,
+    eval_steps=1800,
     logging_steps=10,
     gradient_accumulation_steps=16,
     num_train_epochs=1,
     learning_rate=1e-4,
     lr_scheduler_type='constant',
-    save_steps=1800,
+    save_steps=6400,
     max_grad_norm=3,
     bf16=True,
     warmup_ratio=0.03
