@@ -211,22 +211,26 @@ class MambaTransformer(nn.Module):
         # model.embed_in.requires_grad_ = False
         return model
     
-    # def freeze_layers_except_mamba(self):
-    #     """Freezes all parameters except for those in the Mamba layers."""
-    #     # Freeze all parameters in the model
-    #     for param in self.parameters():
-    #         param.requires_grad = False
-
-    #     # Unfreeze parameters in the Mamba layers and projection layers
-    #     for layer in self.mamba_layers:
-    #         for param in layer.parameters():
-    #             param.requires_grad = True
-    #     for param in self.final_transformer_layer.parameters():
-    #         param.requires_grad = True
-    #     for param in self.final_layer_norm.parameters():
-    #         param.requires_grad = True
-    #     for param in self.embed_out.parameters():
-    #         param.requires_grad = True
+    def freeze_layers(self, freeze_transformers=False, freeze_mamba=False):
+        """Freezes all parameters except for those in the Mamba layers."""
+        if freeze_transformers or freeze_mamba:
+            for param in self.parameters():
+                param.requires_grad = False
+            if freeze_mamba:
+                self.embed_in.requires_grad_ = True
+                for layer in self.first_transformer_layers:
+                    for param in layer.parameters():
+                        param.requires_grad = True
+            else:
+                for layer in self.mamba_layers:
+                    for param in layer.parameters():
+                        param.requires_grad = True
+                for param in self.final_transformer_layer.parameters():
+                    param.requires_grad = True
+                for param in self.final_layer_norm.parameters():
+                    param.requires_grad = True
+                for param in self.embed_out.parameters():
+                    param.requires_grad = True
 
 class MambaTransformerForLM(PreTrainedModel):
     def __init__(self, 
@@ -240,7 +244,9 @@ class MambaTransformerForLM(PreTrainedModel):
             distill_loss_weight=0.5, 
             first_transformer_layers=None, 
             mamba_start_layer=None, 
-            mamba_end_layer=None):
+            mamba_end_layer=None,
+            freeze_mamba=False,
+            freeze_transformers=False):
         super().__init__(config)
         self.pretrained_mamba_name = pretrained_mamba_name
         self.pretrained_pythia_name = pretrained_pythia_name
@@ -258,7 +264,8 @@ class MambaTransformerForLM(PreTrainedModel):
                 new_key = key.replace('model.', '')
                 loaded[new_key] = loaded.pop(key)  # Move the value to the new key and remove the old key
             self.model.load_state_dict(loaded, strict=False)
-        # self.model.freeze_layers_except_mamba()
+            del loaded
+        self.model.freeze_layers(freeze_transformers, freeze_mamba)
         self.teacher = None
         self.sft = sft
         if distilling:
@@ -271,7 +278,7 @@ class MambaTransformerForLM(PreTrainedModel):
             self.ce_loss_sum = 0
             self.distill_loss_sum = 0
 
-    def forward(self, input_ids, attention_mask, labels):
+    def forward(self, input_ids, attention_mask, labels=None):
         logits = self.model(input_ids, attention_mask, self.dtype)
         
         if labels is None:

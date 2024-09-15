@@ -1,6 +1,8 @@
 EleutherAI/
 state-spaces/
+wandb/*
 **/*.safetensors
+trans_12_mamba_3_14/*
 **/*.pt
 .vscode/
 __pycache__/
